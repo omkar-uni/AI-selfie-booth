@@ -14,9 +14,14 @@ const __dirname = path.dirname(__filename);
 
 const REMOVE_BG_API_KEY = process.env.REMOVE_BG_API_KEY; // 🔑 from .env
 
-export async function generateFinalImage(inputPath) {
+/**
+ * Generate a themed EVOLVE image
+ * @param {string} inputPath - Path of the input image
+ * @param {string} theme - Theme name (e.g. 'professional', 'artistic', 'dark', etc.)
+ */
+export async function generateFinalImage(inputPath, theme = "professional") {
   try {
-    console.log("🎨 Generating EVOLVE themed image with background removal...");
+    console.log(`🎨 Generating EVOLVE themed image (${theme})...`);
 
     // === STEP 1: Remove background ===
     console.log("🪄 Removing background...");
@@ -26,9 +31,7 @@ export async function generateFinalImage(inputPath) {
 
     const removeBgRes = await fetch("https://api.remove.bg/v1.0/removebg", {
       method: "POST",
-      headers: {
-        "X-Api-Key": REMOVE_BG_API_KEY,
-      },
+      headers: { "X-Api-Key": REMOVE_BG_API_KEY },
       body: formData,
     });
 
@@ -42,9 +45,23 @@ export async function generateFinalImage(inputPath) {
     fs.writeFileSync(noBgPath, removedBgBuffer);
     console.log("✅ Background removed successfully.");
 
-    // === STEP 2: Define paths for assets ===
+    // === STEP 2: Define assets ===
     const assetsDir = path.join(__dirname, "assets");
-    const bgImagePath = path.join(assetsDir, "bg.png");
+
+    // 🎨 Theme-based background selection
+    const bgMap = {
+      professional: "bg_professional.jpg",
+      artistic: "bg_artistic.jpeg",
+      superhero: "bg_superhero.jpg",
+      doctor: "bg_doctor.jpeg",
+
+      default: "bg.png", // fallback
+    };
+
+    const bgFileName = bgMap[theme] || bgMap.default;
+    const bgImagePath = path.join(assetsDir, bgFileName);
+
+    // 🌈 Common assets
     const blueArcPath = path.join(assetsDir, "blue.png");
     const logoPath = path.join(assetsDir, "evolveLogo.png");
     const babyTreePath = path.join(assetsDir, "babyTree.png");
@@ -58,16 +75,16 @@ export async function generateFinalImage(inputPath) {
       .resize(frameWidth, frameHeight, { fit: "cover" })
       .toBuffer();
 
-    // === STEP 4: Process subject (with removed background) ===
+    // === STEP 4: Process subject ===
     const person = await sharp(noBgPath)
-      .resize({ width: 850, height: 1100, fit: "cover" })
+      .resize({ width: 900, height: 1200, fit: "inside" }) // slightly larger subject
       .toBuffer();
 
     const personMeta = await sharp(person).metadata();
     const personLeft = Math.floor((frameWidth - personMeta.width) / 2);
     const personTop = Math.floor(frameHeight - personMeta.height - 150);
 
-    // === STEP 5: White gradient fade at bottom ===
+    // === STEP 5: White gradient fade ===
     const gradientSvg = `
       <svg width="${frameWidth}" height="500" xmlns="http://www.w3.org/2000/svg">
         <defs>
@@ -95,32 +112,28 @@ export async function generateFinalImage(inputPath) {
     // === STEP 7: Composite all layers ===
     const final = await sharp(background)
       .composite([
-        // 👤 Main subject (background removed)
         { input: person, top: personTop, left: personLeft },
-
-        // ⚪ White gradient fade (keep this!)
         { input: gradientBuffer, top: frameHeight - 500, left: 0 },
-
-        // 🌱 Baby tree & EVOLVE logo
         { input: babyTree, top: frameHeight - 520, left: -40 },
         { input: logo, top: frameHeight - 250, left: 200 },
-
-        // 🔵 Blue overlay — on top of everything
         { input: blueArc, top: frameHeight - 150, left: 0, blend: "over" },
       ])
       .png()
       .toBuffer();
 
-    // === STEP 8: Save final output ===
+    // === STEP 8: Save output ===
     const outputDir = path.join(__dirname, "public");
     if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir, { recursive: true });
 
-    const outputPath = path.join(outputDir, `EVOLVE_${Date.now()}.png`);
+    const outputPath = path.join(
+      outputDir,
+      `EVOLVE_${theme}_${Date.now()}.png`
+    );
     fs.writeFileSync(outputPath, final);
 
-    console.log(`✅ EVOLVE poster created at: ${outputPath}`);
+    console.log(`✅ EVOLVE ${theme} poster created at: ${outputPath}`);
 
-    // Clean up temp file
+    // Cleanup temp file
     if (fs.existsSync(noBgPath)) fs.unlinkSync(noBgPath);
 
     return outputPath;
